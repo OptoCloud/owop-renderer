@@ -78,7 +78,7 @@ async function requestChunks() {
                         // If we are disconnected from the map, then wait until we reconnect
                         while(!client.net.isWebsocketConnected || !client.net.isWorldConnected) await timeout(5);
 
-                        client.world.requestChunk(root_cx + cx, root_cy + cy);
+                        client.world.requestChunk(root_cx + cx, root_cy + cy).catch(err => { --cx; });
 
                         // We dont wanna be rate limited
                         await timeout(1);
