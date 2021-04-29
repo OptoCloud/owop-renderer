@@ -27,6 +27,9 @@ const imageChunksV = Math.floor(imageHeight / chunkSize);
 const imageChunksH = Math.floor(imageWidth / chunkSize);
 const imageChunksTotal = imageChunksH * imageChunksV;
 
+const root_cx = Math.floor(root_x / chunkSize);
+const root_cy = Math.floor(root_y / chunkSize);
+
 var readChunks = 0;
 
 // Boolean array to keep track of which chunks we have written
@@ -47,11 +50,10 @@ var client = new OJS.Client({
     world: argv[0]
 });
 
-client.on('join', start);
+client.once('join', start);
 client.on('chunk', paintChunk);
 
 async function start() {
-    client.off('join', start);
     process.stdout.clearLine();
     console.log('Requesting and painting ' + imageChunksTotal + ' chunks...');
     requestChunks();
@@ -76,11 +78,11 @@ async function requestChunks() {
                         // If we are disconnected from the map, then wait until we reconnect
                         while(!client.net.isWebsocketConnected || !client.net.isWorldConnected) await timeout(5);
 
-                        client.world.requestChunk(cx, cy);
+                        client.world.requestChunk(root_cx + cx, root_cy + cy);
 
                         // We dont wanna be rate limited
-                        await timeout(5);
-                    } catch(e) { --cx; console.error(e); } // If we get an exception, go back a step and try again
+                        await timeout(1);
+                    } catch(e) { --cx; } // If we get an exception, go back a step and try again
                 }
             }
         }
@@ -96,7 +98,7 @@ async function awaitFinishedCanvas() {
 
 async function paintChunk(cx, cy, raw, protected) {
     // Stupid stuff to avoid re-drawing chunks
-    if (shouldDrawChunk(cx, cy)) {
+    if (shouldDrawChunk(cx - root_cx, cy - root_cy)) {
 
         // Index of chunk array
         var idx = 0;
@@ -116,7 +118,7 @@ async function paintChunk(cx, cy, raw, protected) {
             }
         }
 
-        setChunkDrawn(cx, cy);
+        setChunkDrawn(cx - root_cx, cy - root_cy);
 
         // Increment the amount of read chunks, and print the current progress
         printProgress(++readChunks / imageChunksTotal);
