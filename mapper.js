@@ -2,34 +2,43 @@ const fs = require('fs');
 const OJS = require('owop-js');
 const PNG = require('pngjs').PNG;
 
+// Disregard the two first aguments, theire stupid
 var argc = process.argv.length - 2;
-
 if (argc != 5) {
     showUsage();
 }
 
+// The arguments that actually matter
 var argv = process.argv.slice(2);
 
+// Parse all other args except the first one because that the server name
 var argv_int = parseArgsAsInts(argv.slice(1), argc);
 
+// Ur stupid if u get this error, images cant be negative in size
 if (argv_int[2] <= 0 || argv_int[3] <= 0) {
     console.error('Image height/width cannot be negative!');
     showUsage();
 }
 
+// Declare a bunch of constants that imma need later
 const root_x = argv_int[0];
 const root_y = argv_int[1];
 const imageHeight = argv_int[2];
 const imageWidth  = argv_int[3];
 
+// Should be 16x16
 const chunkSize = OJS.Client.options.chunkSize;
+
+// Image dimensions in chunks
 const imageChunksV = Math.floor(imageHeight / chunkSize);
 const imageChunksH = Math.floor(imageWidth / chunkSize);
 const imageChunksTotal = imageChunksH * imageChunksV;
 
+// Image root coordinates in chunk positions
 const root_cx = Math.floor(root_x / chunkSize);
 const root_cy = Math.floor(root_y / chunkSize);
 
+// How many chunks we have drawn to the canvas
 var readChunks = 0;
 
 // Boolean array to keep track of which chunks we have written
@@ -53,6 +62,7 @@ var client = new OJS.Client({
 client.once('join', start);
 client.on('chunk', paintChunk);
 
+// main function
 async function start() {
     process.stdout.clearLine();
     console.log('Requesting and painting ' + imageChunksTotal + ' chunks...');
@@ -68,8 +78,8 @@ async function start() {
     process.exit(0);
 }
 
+// Request all the chunks in our target area
 async function requestChunks() {
-    // Request all the chunks in our target area
     while (!checkAllDrawn()) {
         for (var cy = 0; cy < imageChunksV; ++cy) {
             for (var cx = 0; cx < imageChunksH; ++cx) {
@@ -89,13 +99,14 @@ async function requestChunks() {
     }
 }
 
+// Wait until all chunks have been drawn onto the canvas
 async function awaitFinishedCanvas() {
-    // Wait until all chunks have been drawn onto the canvas
     while (imageChunksTotal > readChunks) {
         await timeout(50);
     }
 }
 
+// This paints chunks to the canvas
 async function paintChunk(cx, cy, raw, protected) {
     // Stupid stuff to avoid re-drawing chunks
     if (shouldDrawChunk(cx - root_cx, cy - root_cy)) {
@@ -118,6 +129,7 @@ async function paintChunk(cx, cy, raw, protected) {
             }
         }
 
+        // Register the current chunk as drawn
         setChunkDrawn(cx - root_cx, cy - root_cy);
 
         // Increment the amount of read chunks, and print the current progress
@@ -125,6 +137,7 @@ async function paintChunk(cx, cy, raw, protected) {
     }
 }
 
+// Draws a pixel to the canvas
 async function setPixel(r, g, b, x, y) {
   var idx = (imageWidth * y + x) << 2;
 
@@ -134,10 +147,12 @@ async function setPixel(r, g, b, x, y) {
   canvas.data[idx + 3] = 255;
 }
 
+// Timeout thingy
 function timeout(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Prints progress without spamming the console with newlines
 async function printProgress(value) {
     process.stdout.clearLine();
     process.stdout.cursorTo(0);
@@ -145,6 +160,7 @@ async function printProgress(value) {
     process.stdout.cursorTo(26);
 }
 
+// Thing that checks if a chunk sgould be drawn (useful for failed chunks, so that the main loop can re-request them)
 function shouldDrawChunk(cx, cy) {
     return bmap[(imageChunksV * cy) + cx];
 }
@@ -161,11 +177,13 @@ function checkAllDrawn() {
     return true;
 }
 
+// Help message
 function showUsage() {
     console.log('USAGE:\n\tnode mapper.js [world_name] [x_pos] [y_pos] [height] [length]\n\tImages will be put in a "screenshots" folder');
     process.exit(1);
 }
 
+// Stupid int parser
 function parseArgsAsInts(argv, argc) {
     var i = 0;
     var ints = new Array(argc);
