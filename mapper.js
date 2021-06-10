@@ -7,8 +7,8 @@ if (process.argv.length != 7) {
 }
 
 const worldName = process.argv[2];
-const pixelRootX = Math.floor(Number(process.argv[3]));
-const pixelRootY = Math.floor(Number(process.argv[4]));
+const pixelFloorX = Math.floor(Number(process.argv[3]));
+const pixelFloorY = Math.floor(Number(process.argv[4]));
 const imageHeight = Math.floor(Number(process.argv[5]));
 const imageWidth  = Math.floor(Number(process.argv[6]));
 
@@ -21,14 +21,19 @@ if (imageHeight <= 0 || imageWidth <= 0) {
 // Should be 16x16
 const chunkSize = OJS.Client.options.chunkSize;
 
-// Image dimensions in chunks
-const imageChunksV = Math.floor(imageHeight / chunkSize);
-const imageChunksH = Math.floor(imageWidth / chunkSize);
-const imageChunksTotal = imageChunksH * imageChunksV;
+const pixelCeilX = pixelFloorX + imageWidth;
+const pixelCeilY = pixelFloorY + imageHeight;
 
 // Image root coordinates in chunk positions
-const chunkRootX = Math.floor(pixelRootX / chunkSize);
-const chunkRootY = Math.floor(pixelRootY / chunkSize);
+const chunkFloorX = Math.floor(pixelFloorX / chunkSize);
+const chunkFloorY = Math.floor(pixelFloorY / chunkSize);
+const chunkCeilX = Math.ceil(pixelCeilX / chunkSize);
+const chunkCeilY = Math.ceil(pixelCeilY / chunkSize);
+
+// Image dimensions in chunks
+const imageChunksV = chunkCeilY - chunkFloorY;
+const imageChunksH = chunkCeilX - chunkFloorX;
+const imageChunksTotal = imageChunksH * imageChunksV;
 
 // How many chunks we have drawn to the canvas
 var readChunks = 0;
@@ -67,7 +72,7 @@ async function start() {
         fs.mkdirSync(dirname);
     }
 
-    let filename = worldName + '_' + imageHeight + 'x' + imageWidth + '_' + pixelRootX + '-' + pixelRootY + '_';
+    let filename = worldName + '_' + imageHeight + 'x' + imageWidth + '_' + pixelFloorX + '-' + pixelFloorY + '_';
 
     console.log('\nSaving canvas as "' + filename + '"');
     fs.writeFileSync(dirname + '/' + filename + '.png', PNG.sync.write(canvas, { colorType: 2 }));
@@ -86,7 +91,7 @@ async function requestChunks() {
                         // If we are disconnected from the map, then wait until we reconnect
                         while(!client.net.isWebsocketConnected || !client.net.isWorldConnected) await timeout(5);
 
-                        client.world.requestChunk(chunkRootX + cx, chunkRootY + cy).catch(err => { --cx; });
+                        client.world.requestChunk(chunkFloorX + cx, chunkFloorY + cy).catch(err => { --cx; });
 
                         // We dont wanna be rate limited
                         await timeout(1);
@@ -107,28 +112,39 @@ async function awaitFinishedCanvas() {
 // This paints chunks to the canvas
 async function paintChunk(cx, cy, raw, protected) {
     // Stupid stuff to avoid re-drawing chunks
-    if (shouldDrawChunk(cx - chunkRootX, cy - chunkRootY)) {
+    if (shouldDrawChunk(cx - chunkFloorX, cy - chunkFloorY)) {
 
         // Index of chunk array
         let idx = 0;
 
         // Get chunk pixel-position
-        let cpx = (cx * chunkSize) - pixelRootX;
-        let cpy = (cy * chunkSize) - pixelRootY;
+        let cpx = (cx * chunkSize) - pixelFloorX;
+        let cpy = (cy * chunkSize) - pixelFloorY;
 
         // For every pixel of the chunk, draw them to the canvas at a calculated offset
         for (let py = 0; py < chunkSize; ++py) {
             for (let px = 0; px < chunkSize; ++px) {
-                let r = raw[idx++];
-                let g = raw[idx++];
-                let b = raw[idx++];
+                apx = cpx + px;
+                apy = cpy + py;
 
-                setPixel(r, g, b, cpx + px, cpy + py);
+                // Since we may request a chunk thats partially outside the target render we need to check if the pixel should be rendered
+                if (isInsideBounds(apx, apy)) {
+                    let r = raw[idx++];
+                    let g = raw[idx++];
+                    let b = raw[idx++];
+    
+                    setPixel(r, g, b, apx, apy);
+                }
+                else
+                {
+                    // Skip the indicies
+                    idx += 3;
+                }
             }
         }
 
         // Register the current chunk as drawn
-        setChunkDrawn(cx - chunkRootX, cy - chunkRootY);
+        setChunkDrawn(cx - chunkFloorX, cy - chunkFloorY);
 
         // Increment the amount of read chunks, and print the current progress
         printProgress(++readChunks / imageChunksTotal);
@@ -156,6 +172,10 @@ async function printProgress(value) {
     process.stdout.cursorTo(0);
     process.stdout.write('Canvas is ' + parseFloat(value * 100).toFixed(2) + '% complete');
     process.stdout.cursorTo(26);
+}
+
+function isInsideBounds(apx, apy) {
+    return apx >= 0 && apx < imageWidth && apy >= 0 && apy < imageHeight;
 }
 
 // Thing that checks if a chunk sgould be drawn (useful for failed chunks, so that the main loop can re-request them)
